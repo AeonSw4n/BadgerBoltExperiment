@@ -56,6 +56,10 @@ func (bdb *BadgerDatabase) Cleanup() error {
 	return os.RemoveAll(bdb.opts.Dir)
 }
 
+func (bdb *BadgerDatabase) Id() string {
+	return "BadgerDB"
+}
+
 // ==========================
 // BadgerTransaction
 // ==========================

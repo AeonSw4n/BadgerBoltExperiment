@@ -52,17 +52,18 @@ func Generic1GBTest(db Database, t *testing.T) {
 	timer := NewTimer()
 	profiler := NewProfiler()
 	for i := 0; i < NumBatches1GB; i++ {
-		currentTime := timer.GetTotalElapsedTime("Batch")
-		timer.Start("Batch")
+		currentTime := timer.GetTotalElapsedTime("Experiment")
+		timer.Start("Experiment")
 		Generic25MBBatchTest(db, t)
-		timer.End("Batch")
-		deltaTime := timer.GetTotalElapsedTime("Batch") - currentTime
+		timer.End("Experiment")
+		deltaTime := timer.GetTotalElapsedTime("Experiment") - currentTime
 
 		memUsageLog := PrintMemUsage()
 		profiler.Measure()
 		t.Logf("Batch %v/%v\n%v\nTotal time: %vs\t Delta time: %vs\n",
-			i, NumBatches1GB, memUsageLog, timer.GetTotalElapsedTime("Batch"), deltaTime)
+			i, NumBatches1GB, memUsageLog, timer.GetTotalElapsedTime("Experiment"), deltaTime)
 	}
+	t.Logf("Timer results:\n%v", timer.Print("Experiment"))
 	t.Logf("Profiler results:\n%v", profiler.Print())
 }
 

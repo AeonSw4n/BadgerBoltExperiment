@@ -5,6 +5,7 @@ type Database interface {
 	Update(func(Transaction) error) error
 	Close() error
 	Cleanup() error
+	Id() string
 }
 
 type Transaction interface {

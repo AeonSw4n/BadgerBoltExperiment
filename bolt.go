@@ -64,6 +64,10 @@ func (bdb *BoltDatabase) Cleanup() error {
 	return os.RemoveAll(bdb.dir)
 }
 
+func (bdb *BoltDatabase) Id() string {
+	return "BoltDB"
+}
+
 // ==========================
 // BoltTransaction
 // ==========================
