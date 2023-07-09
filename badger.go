@@ -85,6 +85,43 @@ func (btx *BadgerTransaction) Get(key []byte) ([]byte, error) {
 	return item.ValueCopy(nil)
 }
 
+func (btx *BadgerTransaction) GetIterator() Iterator {
+	opts := badger.DefaultIteratorOptions
+	it := btx.txn.NewIterator(opts)
+	it.Seek([]byte{})
+	return NewBadgerIterator(it)
+}
+
+// ==========================
+// BadgerIterator
+// ==========================
+
+type BadgerIterator struct {
+	it *badger.Iterator
+}
+
+func NewBadgerIterator(it *badger.Iterator) *BadgerIterator {
+	return &BadgerIterator{it: it}
+}
+
+func (bit *BadgerIterator) Value() ([]byte, error) {
+	item := bit.it.Item()
+	return item.ValueCopy(nil)
+}
+
+func (bit *BadgerIterator) Key() []byte {
+	return bit.it.Item().KeyCopy(nil)
+}
+
+func (bit *BadgerIterator) Next() bool {
+	bit.it.Next()
+	return bit.it.Valid()
+}
+
+func (bit *BadgerIterator) Close() {
+	bit.it.Close()
+}
+
 // PerformanceBadgerOptions are performance geared
 // BadgerDB options that use much more RAM than the
 // default settings.

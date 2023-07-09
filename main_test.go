@@ -10,6 +10,7 @@ const (
 	NumKeys25MBBatch         = 250
 	NumRemoveKeys25MBBatch   = 20
 	NumRetrieveKeys25MBBatch = 20
+	NumIteratedKeys25MBBatch = 20
 	NumBatches1GB            = 40
 )
 
@@ -19,6 +20,12 @@ func NewKey(key []byte) Key {
 	var k Key
 	copy(k[:], key[:])
 	return k
+}
+
+func (k Key) Bytes() []byte {
+	copyKey := make([]byte, len(k[:]))
+	copy(copyKey, k[:])
+	return copyKey
 }
 
 func TestBolt1GB(t *testing.T) {
@@ -43,6 +50,7 @@ func TestBadger1GB(t *testing.T) {
 
 func Generic1GBTest(db Database, t *testing.T) {
 	timer := NewTimer()
+	profiler := NewProfiler()
 	for i := 0; i < NumBatches1GB; i++ {
 		currentTime := timer.GetTotalElapsedTime("Batch")
 		timer.Start("Batch")
@@ -51,9 +59,11 @@ func Generic1GBTest(db Database, t *testing.T) {
 		deltaTime := timer.GetTotalElapsedTime("Batch") - currentTime
 
 		memUsageLog := PrintMemUsage()
+		profiler.Measure()
 		t.Logf("Batch %v/%v\n%v\nTotal time: %vs\t Delta time: %vs\n",
 			i, NumBatches1GB, memUsageLog, timer.GetTotalElapsedTime("Batch"), deltaTime)
 	}
+	t.Logf("Profiler results:\n%v", profiler.Print())
 }
 
 func Generic25MBBatchTest(db Database, t *testing.T) {
@@ -87,6 +97,9 @@ func Generic25MBBatchTest(db Database, t *testing.T) {
 	for i, val := range retrievedValues {
 		require.Equal(kvMap[retrievedKeys[i]], val)
 	}
+
+	// Iterate over a couple values from the DB and confirm they match the original values.
+	IterateOverDb(db, t)
 }
 
 func Write25MBBatchToDb(db Database, t *testing.T) (_kv map[Key][]byte) {
@@ -104,7 +117,7 @@ func Write25MBBatchToDb(db Database, t *testing.T) (_kv map[Key][]byte) {
 
 	require.NoError(db.Update(func(tx Transaction) error {
 		for key, val := range kvMap {
-			if err := tx.Set(key[:], val); err != nil {
+			if err := tx.Set(key.Bytes(), val); err != nil {
 				return err
 			}
 		}
@@ -117,7 +130,7 @@ func DeleteFromDB(db Database, keys []Key, t *testing.T) {
 	require := require.New(t)
 	require.NoError(db.Update(func(tx Transaction) error {
 		for _, key := range keys {
-			if err := tx.Delete(key[:]); err != nil {
+			if err := tx.Delete(key.Bytes()); err != nil {
 				return err
 			}
 		}
@@ -130,7 +143,7 @@ func GetFromDb(db Database, keys []Key, t *testing.T) [][]byte {
 	var values [][]byte
 	require.NoError(db.Update(func(tx Transaction) error {
 		for _, key := range keys {
-			val, err := tx.Get(key[:])
+			val, err := tx.Get(key.Bytes())
 			if err != nil {
 				val = nil
 			}
@@ -139,4 +152,20 @@ func GetFromDb(db Database, keys []Key, t *testing.T) [][]byte {
 		return nil
 	}))
 	return values
+}
+
+func IterateOverDb(db Database, t *testing.T) {
+	require := require.New(t)
+	require.NoError(db.Update(func(tx Transaction) error {
+		it := tx.GetIterator()
+		defer it.Close()
+		for it.Next() {
+			k := it.Key()
+			v, err := it.Value()
+			require.NoError(err)
+			require.NotNil(k)
+			require.NotNil(v)
+		}
+		return nil
+	}))
 }

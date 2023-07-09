@@ -92,3 +92,49 @@ func (bt *BoltTransaction) Get(key []byte) ([]byte, error) {
 	b := bt.tx.Bucket([]byte(RandTxnsBucketName))
 	return b.Get(key), nil
 }
+
+func (bt *BoltTransaction) GetIterator() Iterator {
+	b := bt.tx.Bucket([]byte(RandTxnsBucketName))
+	return NewBoltIterator(b.Cursor())
+}
+
+// ==========================
+// BoltIterator
+// ==========================
+
+type BoltIterator struct {
+	it           *bolt.Cursor
+	currentValue []byte
+	currentKey   []byte
+}
+
+func NewBoltIterator(it *bolt.Cursor) *BoltIterator {
+	k, v := it.First()
+	return &BoltIterator{
+		it:           it,
+		currentKey:   k,
+		currentValue: v,
+	}
+}
+
+func (bi *BoltIterator) Value() ([]byte, error) {
+	return bi.currentValue, nil
+}
+
+func (bi *BoltIterator) Key() []byte {
+	return bi.currentKey
+}
+
+func (bi *BoltIterator) Next() bool {
+	k, v := bi.it.Next()
+	if k == nil {
+		return false
+	}
+	bi.currentKey = k
+	bi.currentValue = v
+	return true
+}
+
+func (bi *BoltIterator) Close() {
+	bi.it = nil
+}

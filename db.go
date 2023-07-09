@@ -11,4 +11,12 @@ type Transaction interface {
 	Set(key []byte, value []byte) error
 	Delete(key []byte) error
 	Get(key []byte) ([]byte, error)
+	GetIterator() Iterator
+}
+
+type Iterator interface {
+	Value() ([]byte, error)
+	Key() []byte
+	Next() bool
+	Close()
 }
