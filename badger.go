@@ -85,20 +85,6 @@ func (btx *BadgerTransaction) Get(key []byte) ([]byte, error) {
 	return item.ValueCopy(nil)
 }
 
-//
-//func (btx *BadgerTransaction) Get(key []byte) ([]byte, error) {
-//	var value []byte
-//	item, err := btx.txn.Get(key)
-//	if err != nil {
-//		return value, err
-//	}
-//	err = item.Value(func(val []byte) error {
-//		value = val
-//		return nil
-//	})
-//	return value, err
-//}
-
 // PerformanceBadgerOptions are performance geared
 // BadgerDB options that use much more RAM than the
 // default settings.
