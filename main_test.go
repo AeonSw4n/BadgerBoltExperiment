@@ -11,7 +11,7 @@ const (
 	NumRemoveKeys25MBBatch   = 20
 	NumRetrieveKeys25MBBatch = 20
 	NumIteratedKeys25MBBatch = 20
-	NumBatches1GB            = 40
+	NumBatches1GB            = 200
 )
 
 type Key [32]byte
@@ -28,27 +28,39 @@ func (k Key) Bytes() []byte {
 	return copyKey
 }
 
-func TestBolt1GB(t *testing.T) {
+func TestBolt5GB(t *testing.T) {
 	require := require.New(t)
 
 	db := NewBoltDatabase()
 	require.NoError(db.Setup())
 	defer db.Cleanup()
 	defer db.Close()
-	Generic1GBTest(db, t)
+	Generic5GBTest(db, t)
 }
 
-func TestBadger1GB(t *testing.T) {
+func TestBadger5GBDefault(t *testing.T) {
 	require := require.New(t)
 
-	db := NewBadgerDatabase()
+	opts := GetTestBadgerOpts(DefaultMemTableSize, DefaultLogValueSize)
+	db := NewBadgerDatabase(opts)
 	require.NoError(db.Setup())
 	defer db.Cleanup()
 	defer db.Close()
-	Generic1GBTest(db, t)
+	Generic5GBTest(db, t)
 }
 
-func Generic1GBTest(db Database, t *testing.T) {
+func TestBadger5GBPerformance(t *testing.T) {
+	require := require.New(t)
+
+	opts := GetTestBadgerOpts(PerformanceMemTableSize, PerformanceLogValueSize)
+	db := NewBadgerDatabase(opts)
+	require.NoError(db.Setup())
+	defer db.Cleanup()
+	defer db.Close()
+	Generic5GBTest(db, t)
+}
+
+func Generic5GBTest(db Database, t *testing.T) {
 	timer := NewTimer()
 	profiler := NewProfiler()
 	for i := 0; i < NumBatches1GB; i++ {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"log"
 	"os"
@@ -10,9 +11,11 @@ const (
 	// PerformanceMemTableSize is 3072 MB. Increases the maximum
 	// amount of data we can commit in a single transaction.
 	PerformanceMemTableSize = 3072 << 20
+	DefaultMemTableSize     = 200 << 20
 
 	// PerformanceLogValueSize is 256 MB.
 	PerformanceLogValueSize = 256 << 20
+	DefaultLogValueSize     = 1<<30 - 1
 )
 
 // ==========================
@@ -24,11 +27,10 @@ type BadgerDatabase struct {
 	opts badger.Options
 }
 
-func NewBadgerDatabase() *BadgerDatabase {
-	opts := GetTestBadgerOpts()
+func NewBadgerDatabase(options badger.Options) *BadgerDatabase {
 	return &BadgerDatabase{
 		db:   nil,
-		opts: opts,
+		opts: options,
 	}
 }
 
@@ -139,11 +141,12 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	return opts
 }
 
-func GetTestBadgerOpts() badger.Options {
+func GetTestBadgerOpts(memTableSize uint64, logValueSize uint64) badger.Options {
 	dir, err := os.MkdirTemp("", "badgerdb")
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println(dir)
 
 	// Open a badgerdb in a temporary directory.
 	opts := PerformanceBadgerOptions(dir)
