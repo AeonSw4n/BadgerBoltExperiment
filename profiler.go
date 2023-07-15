@@ -58,6 +58,16 @@ func (p *Profiler) Measure() {
 	p.NumGCMeasurements = append(p.NumGCMeasurements, uint64(m.NumGC))
 }
 
+func (p *Profiler) PrintLastMeasurement() string {
+	if len(p.AllocMeasurements) == 0 {
+		return ""
+	}
+	log := fmt.Sprintf("Alloc = %v MiB\tTotalAlloc = %v MiB\tSys = %v MiB\tNumGC = %v",
+		p.AllocMeasurements[len(p.TotalAllocMeasurements)-1], p.TotalAllocMeasurements[len(p.TotalAllocMeasurements)-1],
+		p.SysMeasurements[len(p.SysMeasurements)-1], p.NumGCMeasurements[len(p.NumGCMeasurements)-1])
+	return log
+}
+
 func computeMean(values []uint64) uint64 {
 	var sum uint64
 	for _, value := range values {
@@ -76,7 +86,7 @@ func computeMax(values []uint64) uint64 {
 	return max
 }
 
-func (p *Profiler) Print() string {
+func (p *Profiler) PrintStats() string {
 	log := fmt.Sprintf("MEAN STATS \t|\t Alloc = %v MiB\tTotalAlloc = %v MiB\tSys = %v MiB\tNumGC = %v\n",
 		computeMean(p.AllocMeasurements), computeMean(p.TotalAllocMeasurements),
 		computeMean(p.SysMeasurements), computeMean(p.NumGCMeasurements))

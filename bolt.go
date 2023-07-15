@@ -2,12 +2,9 @@ package main
 
 import (
 	"github.com/boltdb/bolt"
+	"github.com/pkg/errors"
 	"os"
 	"path/filepath"
-)
-
-const (
-	RandTxnsBucketName = "rand_txns"
 )
 
 // ==========================
@@ -19,40 +16,38 @@ type BoltDatabase struct {
 	dir string
 }
 
-func NewBoltDatabase() *BoltDatabase {
+func NewBoltDatabase(dir string) *BoltDatabase {
 	return &BoltDatabase{
-		db: nil,
+		db:  nil,
+		dir: dir,
 	}
 }
 
 func (bdb *BoltDatabase) Setup() error {
-	dir, err := os.MkdirTemp("", "boltdb")
-	if err != nil {
-		return err
-	}
-	bdb.dir = dir
-	dbFile := filepath.Join(dir, "bolt.db")
-
+	dbFile := filepath.Join(bdb.dir, "bolt.db")
 	db, err := bolt.Open(dbFile, 0600, nil)
 	if err != nil {
 		return err
 	}
 	bdb.db = db
-
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(RandTxnsBucketName))
-		return err
-	})
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
-func (bdb *BoltDatabase) Update(fn func(Transaction) error) error {
+func (bdb *BoltDatabase) GetContext(id []byte) Context {
+	return NewBoltContext(id)
+}
+
+func (bdb *BoltDatabase) Update(ctx Context, fn func(Transaction, Context) error) error {
 	return bdb.db.Update(func(tx *bolt.Tx) error {
-		T := NewBoltTransaction(tx)
-		return fn(T)
+		T := NewBoltTransaction(tx, false)
+		return fn(T, ctx)
+	})
+}
+
+func (bdb *BoltDatabase) View(ctx Context, fn func(Transaction, Context) error) error {
+	return bdb.db.Update(func(tx *bolt.Tx) error {
+		T := NewBoltTransaction(tx, true)
+		return fn(T, ctx)
 	})
 }
 
@@ -60,12 +55,12 @@ func (bdb *BoltDatabase) Close() error {
 	return bdb.db.Close()
 }
 
-func (bdb *BoltDatabase) Cleanup() error {
+func (bdb *BoltDatabase) Erase() error {
 	return os.RemoveAll(bdb.dir)
 }
 
-func (bdb *BoltDatabase) Id() string {
-	return "BoltDB"
+func (bdb *BoltDatabase) Id() DatabaseId {
+	return BOLTDB
 }
 
 // ==========================
@@ -73,33 +68,63 @@ func (bdb *BoltDatabase) Id() string {
 // ==========================
 
 type BoltTransaction struct {
-	tx *bolt.Tx
+	tx       *bolt.Tx
+	readOnly bool
 }
 
-func NewBoltTransaction(tx *bolt.Tx) *BoltTransaction {
+func NewBoltTransaction(tx *bolt.Tx, readOnly bool) *BoltTransaction {
 	return &BoltTransaction{
-		tx: tx,
+		tx:       tx,
+		readOnly: readOnly,
 	}
 }
 
-func (bt *BoltTransaction) Set(key []byte, value []byte) error {
-	b := bt.tx.Bucket([]byte(RandTxnsBucketName))
-	return b.Put(key, value)
+func (bt *BoltTransaction) Set(key []byte, value []byte, ctx Context) error {
+	if bt.readOnly {
+		return errors.New("Set: Transaction is read-only")
+	}
+
+	bucket, err := castBoltContextAndGetBucket(bt.tx, ctx)
+	if err != nil {
+		return errors.Wrap(err, "Set:")
+	}
+	return bucket.Put(key, value)
 }
 
-func (bt *BoltTransaction) Delete(key []byte) error {
-	b := bt.tx.Bucket([]byte(RandTxnsBucketName))
-	return b.Delete(key)
+func (bt *BoltTransaction) Delete(key []byte, ctx Context) error {
+	if bt.readOnly {
+		return errors.New("Delete: Transaction is read-only")
+	}
+
+	bucket, err := castBoltContextAndGetBucket(bt.tx, ctx)
+	if err != nil {
+		return errors.Wrap(err, "Delete:")
+	}
+
+	return bucket.Delete(key)
 }
 
-func (bt *BoltTransaction) Get(key []byte) ([]byte, error) {
-	b := bt.tx.Bucket([]byte(RandTxnsBucketName))
-	return b.Get(key), nil
+func (bt *BoltTransaction) Get(key []byte, ctx Context) ([]byte, error) {
+	bucket, err := castBoltContextAndGetBucket(bt.tx, ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "Get:")
+	}
+
+	return bucket.Get(key), nil
 }
 
-func (bt *BoltTransaction) GetIterator() Iterator {
-	b := bt.tx.Bucket([]byte(RandTxnsBucketName))
-	return NewBoltIterator(b.Cursor())
+func (bt *BoltTransaction) GetIterator(ctx Context) (Iterator, error) {
+	boltCtx, err := AssertContext[*BoltContext](ctx, BOLTDB)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Set:")
+	}
+
+	bucket, err := boltCtx.GetNestedBucket(bt.tx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Set: Problem creating bucket")
+	}
+
+	return NewBoltIterator(bucket.Cursor(), boltCtx), nil
 }
 
 // ==========================
@@ -108,17 +133,23 @@ func (bt *BoltTransaction) GetIterator() Iterator {
 
 type BoltIterator struct {
 	it           *bolt.Cursor
+	ctx          *BoltContext
 	currentValue []byte
 	currentKey   []byte
 }
 
-func NewBoltIterator(it *bolt.Cursor) *BoltIterator {
+func NewBoltIterator(it *bolt.Cursor, ctx *BoltContext) *BoltIterator {
 	k, v := it.First()
 	return &BoltIterator{
 		it:           it,
+		ctx:          ctx,
 		currentKey:   k,
 		currentValue: v,
 	}
+}
+
+func (bi *BoltIterator) GetContext() Context {
+	return bi.ctx
 }
 
 func (bi *BoltIterator) Value() ([]byte, error) {
@@ -141,4 +172,76 @@ func (bi *BoltIterator) Next() bool {
 
 func (bi *BoltIterator) Close() {
 	bi.it = nil
+}
+
+// ==========================
+// BoltContext
+// ==========================
+
+type BucketId []byte
+
+func MakeBucketId(id []byte) BucketId {
+	return id
+}
+
+func (bi BucketId) Bytes() []byte {
+	return bi
+}
+
+type BoltContext struct {
+	bucketIds []BucketId
+}
+
+func NewBoltContext(bucketId []byte) *BoltContext {
+	return &BoltContext{
+		bucketIds: []BucketId{MakeBucketId(bucketId)},
+	}
+}
+
+func NewBoltNestedContext(bucketId []byte, parent *BoltContext) *BoltContext {
+	return &BoltContext{
+		bucketIds: append(parent.bucketIds, MakeBucketId(bucketId)),
+	}
+}
+
+func (bc *BoltContext) Id() DatabaseId {
+	return BOLTDB
+}
+
+func (bc *BoltContext) NestContext(bucketId []byte) Context {
+	return NewBoltNestedContext(bucketId, bc)
+}
+
+func (bc *BoltContext) GetNestedBucket(txn *bolt.Tx) (*bolt.Bucket, error) {
+	if len(bc.bucketIds) == 0 {
+		return nil, errors.New("GetNestedBucket: No bucketIds")
+	}
+
+	bucket, err := txn.CreateBucketIfNotExists(bc.bucketIds[0].Bytes())
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetNestedBucket: Problem getting bucket")
+	}
+	finalBucket := bucket
+	for ii := 1; ii < len(bc.bucketIds); ii++ {
+		finalBucket, err = finalBucket.CreateBucketIfNotExists(bc.bucketIds[ii].Bytes())
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetNestedBucket: Problem creating bucket")
+		}
+	}
+
+	return finalBucket, nil
+}
+
+func castBoltContextAndGetBucket(tx *bolt.Tx, ctx Context) (*bolt.Bucket, error) {
+	boltCtx, err := AssertContext[*BoltContext](ctx, BOLTDB)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Set:")
+	}
+
+	bucket, err := boltCtx.GetNestedBucket(tx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Set: Problem creating bucket")
+	}
+
+	return bucket, nil
 }
